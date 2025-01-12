@@ -2,16 +2,17 @@ version: '3.7'
 
 services:
   postgres:
-      image: postgres:14
-      container_name: postgres_local
-      environment:
-        POSTGRES_USER: myuser
-        POSTGRES_PASSWORD: mypassword
-        POSTGRES_DB: mydb
-      ports:
-        - "5432:5432"
-      volumes:
-        - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    image: postgres:14
+    container_name: postgres_local
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper_local
@@ -31,7 +32,7 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: "zookeeper_local:2181"
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka_local:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
   redpanda-console:
@@ -41,3 +42,25 @@ services:
       - "8080:8080"
     environment:
       KAFKA_BROKERS: kafka_local:9092
+
+  app:
+    build:
+      context: .
+    container_name: app_container
+    depends_on:
+      - postgres
+      - kafka
+    ports:
+      - "8081:8080"
+    environment:
+      POSTGRES_HOST: postgres_local
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydb
+      KAFKA_BROKERS: kafka_local:9092
+      KAFKA_TOPIC: orders
+    volumes:
+      - .:/app
+    command: ["go", "run", "./cmd"]
+

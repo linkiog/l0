@@ -1,6 +1,6 @@
 module github.com/linkiog/lo
 
-go 1.23.4
+go 1.23
 
 require github.com/lib/pq v1.10.9
 

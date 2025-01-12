@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/linkiog/lo/internal/models"
@@ -22,6 +23,11 @@ func (c *Cache) Get(orderUID string) (*models.Order, bool) {
 	defer c.mu.RUnlock()
 
 	o, ok := c.store[orderUID]
+	if ok {
+		fmt.Printf("Order %s found in cache\n", orderUID)
+	} else {
+		fmt.Printf("Order %s not found in cache\n", orderUID)
+	}
 	return o, ok
 }
 

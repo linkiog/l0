@@ -16,7 +16,6 @@ type Consumer struct {
 	cache *cache.Cache
 }
 
-// NewConsumer создаёт Consumer, которому нужны репозиторий (для записи в БД) и кэш (для хранения в памяти).
 func NewConsumer(repo *repository.Repository, c *cache.Cache) *Consumer {
 	return &Consumer{
 		ready: make(chan bool),
@@ -25,43 +24,48 @@ func NewConsumer(repo *repository.Repository, c *cache.Cache) *Consumer {
 	}
 }
 
-// Setup вызывается перед тем, как потребитель начнёт читать партиции
 func (c *Consumer) Setup(sarama.ConsumerGroupSession) error {
 	close(c.ready)
 	return nil
 }
 
-// Cleanup вызывается в конце
 func (c *Consumer) Cleanup(sarama.ConsumerGroupSession) error {
 	return nil
 }
 
-// ConsumeClaim - основная логика чтения из топика
 func (c *Consumer) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 
 	for message := range claim.Messages() {
 		fmt.Printf("Message claimed: key = %s, value = %s, topic = %s\n",
 			string(message.Key), string(message.Value), message.Topic)
 
+		if len(message.Value) == 0 {
+			fmt.Println("Received an empty message, skipping...")
+			continue
+		}
+
 		var order models.Order
 		err := json.Unmarshal(message.Value, &order)
 		if err != nil {
-			fmt.Println("Error unmarshalling JSON:", err)
-			// Можно отправить в dead-letter-queue, либо пропустить
+			fmt.Printf("Error unmarshalling JSON: %v, message: %s\n", err, string(message.Value))
 			continue
 		}
 
-		// Сохраняем в БД
-		if err := c.repo.SaveOrder(&order); err != nil {
-			fmt.Println("Error saving to DB:", err)
+		fmt.Printf("Parsed order: %+v\n", order)
+
+		err = c.repo.SaveOrder(&order)
+		if err != nil {
+			fmt.Printf("Error saving order to DB: %v\n", err)
 			continue
 		}
 
-		// В кэш
+		fmt.Printf("Order saved to DB successfully: %s\n", order.OrderUID)
+
 		c.cache.Set(&order)
+		fmt.Printf("Order cached successfully: %s\n", order.OrderUID)
 
-		// Помечаем offset как прочитанный
 		session.MarkMessage(message, "")
+		fmt.Printf("Message offset marked as read: %d\n", message.Offset)
 	}
 
 	return nil

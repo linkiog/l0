@@ -14,16 +14,14 @@ import (
 func StartConsumerGroup(ctx context.Context, cfg *config.Config, repo *repository.Repository, c *cache.Cache) error {
 	consumer := NewConsumer(repo, c)
 
-	// Настройка Sarama
 	saramaConfig := sarama.NewConfig()
-	saramaConfig.Consumer.Offsets.Initial = sarama.OffsetOldest // читать с начала (или OffsetNewest)
+	saramaConfig.Consumer.Offsets.Initial = sarama.OffsetOldest
 
 	client, err := sarama.NewConsumerGroup([]string{cfg.KafkaBrokers}, "my-group", saramaConfig)
 	if err != nil {
 		return err
 	}
 
-	// Запуск в отдельной горутине
 	go func() {
 		defer func() {
 			if err := client.Close(); err != nil {
@@ -42,7 +40,7 @@ func StartConsumerGroup(ctx context.Context, cfg *config.Config, repo *repositor
 		}
 	}()
 
-	<-consumer.ready // Ждём, пока консьюмер инициализируется
+	<-consumer.ready
 	fmt.Println("Kafka consumer up and running!")
 	return nil
 }

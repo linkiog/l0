@@ -1,4 +1,3 @@
--- Таблица заказов
 CREATE TABLE IF NOT EXISTS orders (
     order_uid VARCHAR PRIMARY KEY,
     track_number VARCHAR,
@@ -13,7 +12,6 @@ CREATE TABLE IF NOT EXISTS orders (
     oof_shard VARCHAR
 );
 
--- Таблица с данными о доставке
 CREATE TABLE IF NOT EXISTS delivery (
     order_uid VARCHAR PRIMARY KEY,
     name VARCHAR,
@@ -29,7 +27,6 @@ CREATE TABLE IF NOT EXISTS delivery (
         ON DELETE CASCADE
 );
 
--- Таблица с данными об оплате
 CREATE TABLE IF NOT EXISTS payment (
     order_uid VARCHAR PRIMARY KEY,
     transaction VARCHAR,
@@ -48,7 +45,6 @@ CREATE TABLE IF NOT EXISTS payment (
         ON DELETE CASCADE
 );
 
--- Таблица с данными о товарах (items)
 CREATE TABLE IF NOT EXISTS items (
     id SERIAL PRIMARY KEY,
     order_uid VARCHAR NOT NULL,

@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	_ "github.com/lib/pq" // postgres driver
+	_ "github.com/lib/pq"
 	"github.com/linkiog/lo/internal/config"
 )
 

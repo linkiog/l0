@@ -19,59 +19,51 @@ import (
 )
 
 func main() {
-	// 1. Читаем конфиг
 	cfg := config.NewConfig()
 
-	// 2. Подключаемся к БД
 	postgresDB, err := db.NewPostgresDB(cfg)
 	if err != nil {
 		panic(fmt.Errorf("failed to connect to Postgres: %w", err))
 	}
 	defer postgresDB.Close()
 
-	// 3. Создаём репозиторий
 	repo := repository.NewRepository(postgresDB)
 
-	// 4. Создаём кэш
 	c := cache.NewCache()
 
-	// (Опционально) — можно при старте загрузить часть данных из БД в кэш,
-	// но если заказов много, это не всегда нужно.
-	// В этом примере не будем ничего предзагружать.
+	if err := loadCacheFromDB(repo, c); err != nil {
+		fmt.Println("Error loading orders into cache:", err)
+	} else {
+		fmt.Println("Cache loaded from DB successfully!")
+	}
 
-	// 5. Запускаем Kafka Consumer (async)
 	ctx, cancel := context.WithCancel(context.Background())
 	err = kafka.StartConsumerGroup(ctx, cfg, repo, c)
 	if err != nil {
 		panic(fmt.Errorf("failed to start consumer group: %w", err))
 	}
 
-	// 6. HTTP-сервер
 	srv := &http.Server{
 		Addr:    ":8080",
 		Handler: server.NewServer(repo, c),
 	}
 
-	// Запускаем сервер в горутине
 	go func() {
-		fmt.Println("Starting HTTP server on :8080")
+		fmt.Println("Starting HTTP server on :8081")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			fmt.Println("HTTP server error:", err)
-			cancel() // в случае фатальной ошибки останавливаем Consumer
+			cancel()
 		}
 	}()
 
-	// 7. Ждём сигналов для graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	<-sigChan
 	fmt.Println("Shutting down gracefully...")
 
-	// Останавливаем context для консьюмера
 	cancel()
 
-	// Дожидаемся полного завершения HTTP-сервера с таймаутом
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
@@ -82,4 +74,14 @@ func main() {
 	}
 
 	fmt.Println("Service exited.")
+}
+func loadCacheFromDB(repo *repository.Repository, c *cache.Cache) error {
+	orders, err := repo.GetAllOrders()
+	if err != nil {
+		return err
+	}
+	for _, o := range orders {
+		c.Set(o)
+	}
+	return nil
 }

@@ -3,6 +3,8 @@ package repository
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/linkiog/lo/internal/models"
 )
@@ -15,17 +17,22 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// SaveOrder сохраняет или обновляет данные о заказе и всех его дочерних сущностях.
 func (r *Repository) SaveOrder(order *models.Order) error {
+	fmt.Printf("Saving order to DB: %+v\n", order)
+
+	parsedDate, err := time.Parse(time.RFC3339, order.DateCreated)
+	if err != nil {
+		return fmt.Errorf("invalid date_created format (%s): %w", order.DateCreated, err)
+	}
+
 	tx, err := r.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer func() {
-		_ = tx.Rollback() // откатываем, если была ошибка
+		_ = tx.Rollback()
 	}()
 
-	// 1. UPSERT в таблицу orders
 	_, err = tx.Exec(`
 		INSERT INTO orders (
 			order_uid, track_number, entry, locale, internal_signature,
@@ -53,14 +60,12 @@ func (r *Repository) SaveOrder(order *models.Order) error {
 		order.DeliveryService,
 		order.ShardKey,
 		order.SmID,
-		order.DateCreated,
+		parsedDate,
 		order.OofShard,
 	)
 	if err != nil {
 		return err
 	}
-
-	// 2. UPSERT в таблицу delivery
 	_, err = tx.Exec(`
 		INSERT INTO delivery (
 			order_uid, name, phone, zip, city, address, region, email
@@ -88,7 +93,6 @@ func (r *Repository) SaveOrder(order *models.Order) error {
 		return err
 	}
 
-	// 3. UPSERT в таблицу payment
 	_, err = tx.Exec(`
 		INSERT INTO payment (
 			order_uid, transaction, request_id, currency, provider,
@@ -123,10 +127,6 @@ func (r *Repository) SaveOrder(order *models.Order) error {
 		return err
 	}
 
-	// 4. Обновление таблицы items:
-	//    Для упрощения логики: удаляем все старые items для этого order_uid и вставляем заново.
-	//    (Можно сделать UPSERT, но тогда логика сложнее.)
-
 	_, err = tx.Exec("DELETE FROM items WHERE order_uid = $1", order.OrderUID)
 	if err != nil {
 		return err
@@ -158,19 +158,15 @@ func (r *Repository) SaveOrder(order *models.Order) error {
 		}
 	}
 
-	// 5. Коммитим транзакцию
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-
 	return nil
 }
 
-// GetOrder возвращает данные о заказе (orders + delivery + payment + items).
 func (r *Repository) GetOrder(orderUID string) (*models.Order, error) {
 	order := &models.Order{}
 
-	// 1. Читаем из orders
 	row := r.db.QueryRow(`
 		SELECT order_uid, track_number, entry, locale, internal_signature,
 		       customer_id, delivery_service, shardkey, sm_id, date_created, oof_shard
@@ -193,12 +189,11 @@ func (r *Repository) GetOrder(orderUID string) (*models.Order, error) {
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil // заказ не найден
+			return nil, nil
 		}
 		return nil, err
 	}
 
-	// 2. Читаем из delivery
 	row = r.db.QueryRow(`
 		SELECT name, phone, zip, city, address, region, email
 		FROM delivery
@@ -215,12 +210,9 @@ func (r *Repository) GetOrder(orderUID string) (*models.Order, error) {
 		&order.Delivery.Email,
 	)
 	if err != nil && err != sql.ErrNoRows {
-		// Если нет в delivery - допустимо (в зависимости от бизнес-логики),
-		// Но обычно должна быть 1 запись
 		return nil, err
 	}
 
-	// 3. Читаем из payment
 	row = r.db.QueryRow(`
 		SELECT transaction, request_id, currency, provider, amount,
 		       payment_dt, bank, delivery_cost, goods_total, custom_fee
@@ -244,7 +236,6 @@ func (r *Repository) GetOrder(orderUID string) (*models.Order, error) {
 		return nil, err
 	}
 
-	// 4. Читаем items
 	rows, err := r.db.Query(`
 		SELECT chrt_id, track_number, price, rid, name, sale,
 		       size, total_price, nm_id, brand, status
@@ -277,4 +268,32 @@ func (r *Repository) GetOrder(orderUID string) (*models.Order, error) {
 	}
 
 	return order, nil
+}
+
+func (r *Repository) GetAllOrders() ([]*models.Order, error) {
+
+	rows, err := r.db.Query("SELECT order_uid FROM orders")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*models.Order
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		order, err := r.GetOrder(uid)
+		if err != nil {
+			return nil, err
+		}
+		if order != nil {
+			result = append(result, order)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }

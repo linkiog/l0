@@ -22,7 +22,7 @@ func NewConfig() *Config {
 		PostgresDB:       getEnv("POSTGRES_DB", "mydb"),
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
 		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
-		KafkaBrokers:     getEnv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+		KafkaBrokers:     getEnv("KAFKA_BOOTSTRAP_SERVERS", "kafka_local:9092"),
 		KafkaTopic:       getEnv("KAFKA_TOPIC", "orders"),
 	}
 	return cfg
